@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Reset Password - St. Martin de Porres Catholic Hospital - Eikwe</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    background: #f2f5f3; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    padding: 24px;
+  }
+  .card {
+    background: #fff; max-width: 420px; width: 100%; border-radius: 16px;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.08); padding: 32px 28px; text-align: center;
+  }
+  .logo { width: 84px; height: 84px; border-radius: 50%; margin-bottom: 14px; object-fit: cover; }
+  h1 { font-size: 18px; margin: 0 0 4px; color: #14532d; }
+  .hospital { font-size: 12px; color: #6b7280; margin: 0 0 22px; letter-spacing: .3px; }
+  p.lead { font-size: 13.5px; color: #374151; margin: 0 0 20px; line-height: 1.5; }
+  label { display: block; text-align: left; font-size: 12.5px; font-weight: 600; color: #374151; margin: 14px 0 6px; }
+  input[type="password"] {
+    width: 100%; padding: 11px 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px;
+  }
+  input[type="password"]:focus { outline: none; border-color: #15803d; box-shadow: 0 0 0 3px rgba(21,128,61,0.15); }
+  button {
+    margin-top: 20px; width: 100%; padding: 12px; border: none; border-radius: 8px;
+    background: #15803d; color: #fff; font-size: 14.5px; font-weight: 600; cursor: pointer;
+  }
+  button:disabled { background: #9ca3af; cursor: not-allowed; }
+  .msg { margin-top: 16px; font-size: 13px; border-radius: 8px; padding: 10px 12px; text-align: left; display: none; }
+  .msg.error { background: #fef2f2; color: #991b1b; display: block; }
+  .msg.success { background: #f0fdf4; color: #14532d; display: block; }
+  .msg.info { background: #eff6ff; color: #1e40af; display: block; }
+  .footer { margin-top: 22px; font-size: 11px; color: #9ca3af; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <img class="logo" alt="Hospital logo" src="https://mjsgjoadkvtswfxijvkh.supabase.co/storage/v1/object/public/branding/hospital-logo.jpeg" />
+    <h1>Set a New Password</h1>
+    <p class="hospital">St. Martin de Porres Catholic Hospital &ndash; Eikwe<br/>SMPH Digital Payslip Portal</p>
+
+    <div id="loading" class="msg info">Verifying your reset link&hellip;</div>
+
+    <form id="form" style="display:none">
+      <p class="lead">Choose a new password for your Payslip Portal account below.</p>
+      <label for="pw1">New password</label>
+      <input id="pw1" type="password" autocomplete="new-password" minlength="6" required />
+      <label for="pw2">Confirm new password</label>
+      <input id="pw2" type="password" autocomplete="new-password" minlength="6" required />
+      <button id="submitBtn" type="submit">Update Password</button>
+    </form>
+
+    <div id="result" class="msg"></div>
+
+    <div class="footer">If you didn't request this, you can safely ignore this page.</div>
+  </div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script>
+  const client = supabase.createClient(
+    "https://mjsgjoadkvtswfxijvkh.supabase.co",
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1qc2dqb2Fka3Z0c3dmeGlqdmtoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg5NjY0MDEsImV4cCI6MjEwNDU0MjQwMX0.fBpgZtj8qFsXgLZ0oq2-D6Nxis94aQPjdXJjbP-A96Y",
+    { auth: { detectSessionInUrl: true, persistSession: false, autoRefreshToken: false } }
+  );
+
+  const loadingEl = document.getElementById('loading');
+  const formEl = document.getElementById('form');
+  const resultEl = document.getElementById('result');
+
+  function showResult(kind, text) {
+    resultEl.className = 'msg ' + kind;
+    resultEl.textContent = text;
+  }
+
+  // If Supabase's own /auth/v1/verify step already failed (most commonly
+  // because the link was already used, or expired), it redirects here with
+  // ?error=...&error_code=...&error_description=... (and again after '#')
+  // rather than a session. Reading that directly gives a real explanation
+  // instead of a generic "invalid" message - and matters a lot here
+  // because a *lot* of email providers/security scanners silently
+  // "pre-click" links in incoming mail to check them for safety, which
+  // burns the link's single use before the real person ever sees it. That
+  // shows up as an "expired" error on a link that's only seconds old.
+  function readUrlError() {
+    const fromParams = (params) => {
+      const code = params.get('error_code');
+      const description = params.get('error_description');
+      if (!code && !description) return null;
+      return { code, description };
+    };
+    return (
+      fromParams(new URLSearchParams(window.location.search)) ||
+      fromParams(new URLSearchParams(window.location.hash.replace(/^#/, '')))
+    );
+  }
+
+  async function init() {
+    const urlError = readUrlError();
+    if (urlError) {
+      loadingEl.style.display = 'none';
+      const friendly =
+        urlError.code === 'otp_expired'
+          ? 'This link has already been used, or has expired. Links like this only work once - if you clicked it more ' +
+            'than once, or your email provider "previewed" it automatically, it stops working before you even see this page. ' +
+            'Please go back to the app and request a brand new reset link, then click it directly (not from a forwarded ' +
+            'or previewed copy).'
+          : (urlError.description || 'This reset link is invalid.').replace(/\+/g, ' ');
+      showResult('error', friendly);
+      // Tidy the scary-looking ?error=...&error_code=... text out of the address bar.
+      history.replaceState(null, '', window.location.pathname);
+      return;
+    }
+
+    // supabase-js's detectSessionInUrl parses the #access_token=...&type=recovery
+    // (or ?code=...) fragment from the emailed link and exchanges it for a
+    // session automatically - we just wait for that to land.
+    const { data, error } = await client.auth.getSession();
+    if (error || !data.session) {
+      loadingEl.style.display = 'none';
+      showResult('error', "This reset link is invalid or has expired. Please request a new one from the app's login screen.");
+      return;
+    }
+    loadingEl.style.display = 'none';
+    formEl.style.display = 'block';
+  }
+
+  formEl.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const pw1 = document.getElementById('pw1').value;
+    const pw2 = document.getElementById('pw2').value;
+    resultEl.className = 'msg';
+    resultEl.textContent = '';
+
+    if (pw1.length < 6) { showResult('error', 'Password must be at least 6 characters.'); return; }
+    if (pw1 !== pw2) { showResult('error', 'Passwords do not match.'); return; }
+
+    const btn = document.getElementById('submitBtn');
+    btn.disabled = true;
+    btn.textContent = 'Updating…';
+
+    const { error } = await client.auth.updateUser({ password: pw1 });
+    if (error) {
+      showResult('error', error.message || 'Could not update your password. Please try the reset link again.');
+      btn.disabled = false;
+      btn.textContent = 'Update Password';
+      return;
+    }
+
+    formEl.style.display = 'none';
+    showResult('success', 'Your password has been updated. You can now close this page and sign in with your new password in the SMPH Digital Payslip Portal app.');
+  });
+
+  init();
+</script>
+</body>
+</html>
