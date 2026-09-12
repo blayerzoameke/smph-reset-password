@@ -123,8 +123,11 @@
       const { error } = await client.auth.verifyOtp({ token_hash: tokenHash, type: otpType });
       loadingEl.style.display = 'none';
       if (error) {
+        console.error('verifyOtp failed', error);
         const expired = /expired|invalid/i.test(error.message || '');
-        showResult('error', expired ? expiredMessage : (error.message || 'This reset link is invalid.'));
+        const detail = ' (details: ' + (error.message || 'unknown') + (error.code ? ' / ' + error.code : '') +
+          (error.status ? ' / HTTP ' + error.status : '') + ')';
+        showResult('error', (expired ? expiredMessage : (error.message || 'This reset link is invalid.')) + detail);
         return;
       }
       formEl.style.display = 'block';
