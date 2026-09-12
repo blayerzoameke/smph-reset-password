@@ -98,26 +98,52 @@
     );
   }
 
+  const expiredMessage =
+    'This link has already been used, or has expired. Links like this only work once - if you clicked it more ' +
+    'than once, or your email provider "previewed" it automatically, it stops working before you even see this page. ' +
+    'Please go back to the app and request a brand new reset link, then click it directly (not from a forwarded ' +
+    'or previewed copy).';
+
   async function init() {
+    // The email links straight to THIS page with ?token_hash=...&type=recovery
+    // (not to Supabase's own /auth/v1/verify endpoint) specifically so that
+    // email link-scanners/previewers - which fetch the URL but don't run our
+    // JavaScript - can't silently burn the one-time token before the real
+    // person clicks. We only call verifyOtp() (a real POST, via the SDK) once
+    // this script actually runs in a browser.
+    const params = new URLSearchParams(window.location.search);
+    const tokenHash = params.get('token_hash');
+    const otpType = params.get('type');
+    // Read this before clearing the URL below - the fallback branch needs it.
     const urlError = readUrlError();
+    // Tidy the scary-looking ?token_hash=...&error=... text out of the address bar.
+    history.replaceState(null, '', window.location.pathname);
+
+    if (tokenHash && otpType) {
+      const { error } = await client.auth.verifyOtp({ token_hash: tokenHash, type: otpType });
+      loadingEl.style.display = 'none';
+      if (error) {
+        const expired = /expired|invalid/i.test(error.message || '');
+        showResult('error', expired ? expiredMessage : (error.message || 'This reset link is invalid.'));
+        return;
+      }
+      formEl.style.display = 'block';
+      return;
+    }
+
+    // Fallback for links sent before this page switched to token_hash: Supabase's
+    // own /verify redirect either lands a session directly, or bounces back with
+    // ?error=...&error_code=...&error_description=... in the URL.
     if (urlError) {
       loadingEl.style.display = 'none';
       const friendly =
         urlError.code === 'otp_expired'
-          ? 'This link has already been used, or has expired. Links like this only work once - if you clicked it more ' +
-            'than once, or your email provider "previewed" it automatically, it stops working before you even see this page. ' +
-            'Please go back to the app and request a brand new reset link, then click it directly (not from a forwarded ' +
-            'or previewed copy).'
+          ? expiredMessage
           : (urlError.description || 'This reset link is invalid.').replace(/\+/g, ' ');
       showResult('error', friendly);
-      // Tidy the scary-looking ?error=...&error_code=... text out of the address bar.
-      history.replaceState(null, '', window.location.pathname);
       return;
     }
 
-    // supabase-js's detectSessionInUrl parses the #access_token=...&type=recovery
-    // (or ?code=...) fragment from the emailed link and exchanges it for a
-    // session automatically - we just wait for that to land.
     const { data, error } = await client.auth.getSession();
     if (error || !data.session) {
       loadingEl.style.display = 'none';
